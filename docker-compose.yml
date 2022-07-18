@@ -1,0 +1,31 @@
+version: '3'
+
+networks:
+    nginx-php:
+
+services:
+
+    # nginx
+    nginx:
+        image: nginx:stable-alpine
+        container_name: nginx-container
+        ports:
+            - "8080:80"
+        volumes:
+            - ./app:/var/www/app
+            - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+        depends_on:
+            - php
+        networks:
+            - nginx-php
+
+    # php
+    php:
+        build:
+            context: .
+            dockerfile: ./php/Dockerfile
+        container_name: php-container
+        volumes:
+            - ./app:/var/www/app
+        networks:
+            - nginx-php
