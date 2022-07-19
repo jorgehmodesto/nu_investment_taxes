@@ -66,58 +66,46 @@ class Taxes
      */
     public function calculate() : self
     {
-        $taxes = array_map(function($transactions) {
+        $taxes = array_map(function($order) {
 
-            $transactions = json_decode($transactions, true);
-            $transactionTaxes = [];
-
-            foreach ($transactions as $transaction) {
-                if (!in_array($transaction['operation'], [
-                    self::BUY_OPERATION, self::SELL_OPERATION
-                ])) {
-                    array_push($transactionTaxes, ["tax" => 0]);
-                    $this->setError(
-                        "Invalid operation ({$transaction['operation']}) - Transaction: " . json_encode($transaction)
-                    );
-                    continue;
-                }
-
-                $position = $this->getPosition();
-
-                if ($transaction['operation'] == self::BUY_OPERATION) {
-                    array_push($transactionTaxes, ["tax" => 0]);
-
-                    $avgPrice = $this->calcAvgPrice($position, $transaction);
-
-                    $position += $transaction['quantity'];
-
-                    $this->setPosition($position);
-                    $this->setAvgPrice($avgPrice);
-
-                    continue;
-                }
-
-                $tax = 0.0;
-                $result = $this->getTransactionResult($transaction);
-
-                $loss = $this->getLoss();
-                $result += $loss;
-                $this->setLoss($result);
-
-                if (
-                    ($transaction['quantity'] * $transaction['unit-cost']) > self::MIN_TRANSACTION_VALUE_TO_PAY_TAXES &&
-                    ($result + $this->getLoss()) > 0
-                ) {
-                    $tax = round($result * self::TAX_PERCENTAGE, 2);
-                }
-
-                $position -= $transaction['quantity'];
-                $this->setPosition($position);
-
-                array_push($transactionTaxes, ["tax" => $tax]);
+            if (!in_array($order['operation'], [
+                self::BUY_OPERATION, self::SELL_OPERATION
+            ])) {
+                $this->setError(
+                    "Invalid operation ({$order['operation']}) - Transaction: " . json_encode($order)
+                );
+                return ["tax" => 0];
             }
 
-            return $transactionTaxes;
+            $position = $this->getPosition();
+
+            if ($order['operation'] == self::BUY_OPERATION) {
+
+                $this->calcAvgPrice($position, $order);
+                $position += $order['quantity'];
+                $this->setPosition($position);
+
+                return ["tax" => 0];
+            }
+
+            $tax = 0.0;
+            $result = $this->getTransactionResult($order);
+
+            $loss = $this->getLoss();
+            $result += $loss;
+            $this->setLoss($result);
+
+            if (
+                ($order['quantity'] * $order['unit-cost']) > self::MIN_TRANSACTION_VALUE_TO_PAY_TAXES &&
+                ($result + $this->getLoss()) > 0
+            ) {
+                $tax = round($result * self::TAX_PERCENTAGE, 2);
+            }
+
+            $position -= $order['quantity'];
+            $this->setPosition($position);
+
+            return ["tax" => $tax];
 
         }, $this->getOrders());
 
@@ -185,11 +173,15 @@ class Taxes
     }
 
     /**
-     * @param array $orders
+     * @param $orders
      * @return Taxes
      */
-    public function setOrders(array $orders) : self
+    public function setOrders($orders) : self
     {
+        if (!is_array($orders)) {
+            $orders = json_decode($orders, true);
+        }
+
         $this->orders = $orders;
         return $this;
     }
@@ -257,22 +249,26 @@ class Taxes
 
     /**
      * @param int $position
-     * @param array $transaction
+     * @param array $order
      * @return float
      */
-    public function calcAvgPrice(int $position, array $transaction) : float
+    public function calcAvgPrice(int $position, array $order) : float
     {
-        return (
-            ($position * $this->getAvgPrice()) + ($transaction['quantity'] * $transaction['unit-cost'])
-        ) / ($position + $transaction['quantity']);
+        $avgPrice =  (
+                ($position * $this->getAvgPrice()) + ($order['quantity'] * $order['unit-cost'])
+            ) / ($position + $order['quantity']);
+
+        $this->setAvgPrice($avgPrice);
+
+        return $avgPrice;
     }
 
     /**
-     * @param array $transaction
+     * @param array $order
      * @return float
      */
-    public function getTransactionResult(array $transaction) : float
+    public function getTransactionResult(array $order) : float
     {
-        return ($transaction['unit-cost'] - $this->getAvgPrice()) * $transaction['quantity'];
+        return ($order['unit-cost'] - $this->getAvgPrice()) * $order['quantity'];
     }
 }
