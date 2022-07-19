@@ -50,7 +50,7 @@ class Taxes
 
     const TAX_PERCENTAGE = 0.2;
 
-    const MIN_TRANSATION_VALUE_TO_PAY_TAXES = 20000;
+    const MIN_TRANSACTION_VALUE_TO_PAY_TAXES = 20000;
 
     /**
      * Tax constructor.
@@ -61,6 +61,9 @@ class Taxes
         $this->setOrders($orders);
     }
 
+    /**
+     * @return Taxes
+     */
     public function calculate() : self
     {
         $taxes = array_map(function($transactions) {
@@ -95,25 +98,21 @@ class Taxes
                 }
 
                 $tax = 0.0;
-                $profit = $this->getOperationProfit($transaction);
+                $result = $this->getTransactionResult($transaction);
 
-                if ($profit < 0) {
-                    $loss = $this->getLoss() + $profit;
-                    $this->setLoss($loss);
-                }
+                $loss = $this->getLoss();
+                $result += $loss;
+                $this->setLoss($result);
 
                 if (
-                    ($transaction['quantity'] * $transaction['unit-cost']) > self::MIN_TRANSATION_VALUE_TO_PAY_TAXES &&
-                    $profit > 0
+                    ($transaction['quantity'] * $transaction['unit-cost']) > self::MIN_TRANSACTION_VALUE_TO_PAY_TAXES &&
+                    ($result + $this->getLoss()) > 0
                 ) {
-                    $tax = round($profit * self::TAX_PERCENTAGE, 2);
+                    $tax = round($result * self::TAX_PERCENTAGE, 2);
                 }
 
                 $position -= $transaction['quantity'];
-                $avgPrice = $this->calcAvgPrice($position, $transaction);
-
                 $this->setPosition($position);
-                $this->setAvgPrice($avgPrice);
 
                 array_push($transactionTaxes, ["tax" => $tax]);
             }
@@ -149,6 +148,10 @@ class Taxes
         return $this->position;
     }
 
+    /**
+     * @param int $position
+     * @return Taxes
+     */
     public function setPosition(int $position) : self
     {
         $this->position = $position;
@@ -239,12 +242,16 @@ class Taxes
     }
 
     /**
-     * @param float $loss
+     * @param float $result
      * @return Taxes
      */
-    public function setLoss(float $loss) : self
+    public function setLoss(float $result) : self
     {
-        $this->loss = $loss;
+        if ($result > 0) {
+            $result = 0;
+        }
+
+        $this->loss = $result;
         return $this;
     }
 
@@ -255,13 +262,8 @@ class Taxes
      */
     public function calcAvgPrice(int $position, array $transaction) : float
     {
-        if ($position = 0) {
-            return 0.0;
-        }
-
         return (
-            ($position * $this->getAvgPrice()) +
-            ($transaction['quantity'] * $transaction['unit-cost'])
+            ($position * $this->getAvgPrice()) + ($transaction['quantity'] * $transaction['unit-cost'])
         ) / ($position + $transaction['quantity']);
     }
 
@@ -269,7 +271,7 @@ class Taxes
      * @param array $transaction
      * @return float
      */
-    public function getOperationProfit(array $transaction) : float
+    public function getTransactionResult(array $transaction) : float
     {
         return ($transaction['unit-cost'] - $this->getAvgPrice()) * $transaction['quantity'];
     }
